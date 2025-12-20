@@ -1,6 +1,8 @@
 // controllers/walletController.js
 const User = require("../models/user");
 
+const MIN_WITHDRAWAL = 12;
+
 // ===============================
 // GET BALANCE
 // ===============================
@@ -34,9 +36,10 @@ exports.getBalance = async (req, res) => {
 // ===============================
 exports.addMoney = async (req, res) => {
   try {
-    const { amount } = req.body;
+    let { amount } = req.body;
+    amount = Number(amount);
 
-    if (!amount || amount <= 0) {
+    if (!amount || isNaN(amount) || amount <= 0) {
       return res.status(400).json({
         success: false,
         message: "Invalid amount"
@@ -70,13 +73,14 @@ exports.addMoney = async (req, res) => {
 };
 
 // ===============================
-// WITHDRAW MONEY (LOGIC KEPT)
+// WITHDRAW MONEY (LOGIC REFINED)
 // ===============================
 exports.withdrawMoney = async (req, res) => {
   try {
-    const { amount } = req.body;
+    let { amount } = req.body;
+    amount = Number(amount);
 
-    if (!amount || amount <= 0) {
+    if (!amount || isNaN(amount) || amount <= 0) {
       return res.status(400).json({
         success: false,
         message: "Invalid amount"
@@ -92,7 +96,24 @@ exports.withdrawMoney = async (req, res) => {
       });
     }
 
-    if (user.walletBalance < amount) {
+    // ❌ No money at all
+    if (user.walletBalance <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Insufficient balance"
+      });
+    }
+
+    // ❌ Has money but less than minimum
+    if (user.walletBalance < MIN_WITHDRAWAL) {
+      return res.status(400).json({
+        success: false,
+        message: `Minimum withdrawal is $${MIN_WITHDRAWAL}`
+      });
+    }
+
+    // ❌ Trying to withdraw more than available
+    if (amount > user.walletBalance) {
       return res.status(400).json({
         success: false,
         message: "Insufficient balance"
