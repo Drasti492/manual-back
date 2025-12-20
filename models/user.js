@@ -29,6 +29,11 @@ const userSchema = new mongoose.Schema(
       default: 0
     },
 
+    completedTasks: {
+    type: Number,
+    default: 0
+  },
+
     connects: {
       type: Number,
       default: 0
