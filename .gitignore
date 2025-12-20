@@ -1,0 +1,21 @@
+# Node.js
+node_modules/
+*.log
+npm-debug.log*
+
+# Environment variables
+.env
+
+# Vercel
+.vercel
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# IDE/editor files
+.vscode/
+*.sublime-*
+*.swp
