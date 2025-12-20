@@ -12,7 +12,9 @@ const app = express();
 // ------------------------------------
 app.use(express.json());
 
-// CORS Allowed Origins
+// ------------------------------------
+// CORS CONFIG — FIXED & PRODUCTION SAFE
+// ------------------------------------
 const allowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5500",
@@ -23,21 +25,32 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
+      // Allow server-to-server, Postman, mobile apps
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
       }
+
+      console.error("❌ Blocked by CORS:", origin);
+      return callback(new Error("Not allowed by CORS"));
     },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true
   })
 );
 
+// ✅ VERY IMPORTANT — handle preflight
+app.options("*", cors());
+
+// ------------------------------------
 // MongoDB strict mode
+// ------------------------------------
 mongoose.set("strictQuery", true);
 
 // ------------------------------------
-// Import Routes (ALL must export a router ONLY)
+// Import Routes
 // ------------------------------------
 const authRoutes = require("./routes/authRoutes");
 const orderRoutes = require("./routes/orderRoutes");
@@ -57,6 +70,7 @@ app.use("/api/notifications", notificationsRoutes);
 app.use("/api/verify", verifyRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/withdrawals", withdrawalRoutes);
+
 // ------------------------------------
 // Brevo Email (Order Notification)
 // ------------------------------------
@@ -65,24 +79,29 @@ brevo.authentications["apiKey"].apiKey = process.env.BREVO_API_KEY;
 
 app.post("/api/order", async (req, res) => {
   try {
-    const { customerName, customerEmail, customerPhone, cart, total } = req.body;
+    const {
+      customerName,
+      customerEmail,
+      customerPhone,
+      cart,
+      total
+    } = req.body;
 
     if (!cart || cart.length === 0) {
       return res.status(400).json({ message: "Cart is empty." });
     }
 
-    // Build email HTML
     const orderItemsHtml = cart
       .map(
         (item) => `
-        <li>
-          <strong>${item.name}</strong> — Ksh ${item.price} × ${item.quantity}<br>
-          <small>${item.description || ""}</small>
-        </li>`
+          <li>
+            <strong>${item.name}</strong> — Ksh ${item.price} × ${item.quantity}<br>
+            <small>${item.description || ""}</small>
+          </li>`
       )
       .join("");
 
-    // Admin Email
+    // Admin email
     const adminEmail = new Brevo.SendSmtpEmail();
     adminEmail.sender = { email: "no-reply@yourdomain.com", name: "Your Shop" };
     adminEmail.to = [{ email: "youremail@example.com", name: "Store Admin" }];
@@ -96,9 +115,10 @@ app.post("/api/order", async (req, res) => {
       <ul>${orderItemsHtml}</ul>
       <h3>Total: Ksh ${total.toFixed(2)}</h3>
     `;
+
     await brevo.sendTransacEmail(adminEmail);
 
-    // Customer Email
+    // Customer email
     const clientEmail = new Brevo.SendSmtpEmail();
     clientEmail.sender = { email: "no-reply@yourdomain.com", name: "Your Shop" };
     clientEmail.to = [{ email: customerEmail, name: customerName }];
@@ -117,16 +137,14 @@ app.post("/api/order", async (req, res) => {
       customerName
     )},%20thank%20you%20for%20your%20order%20of%20Ksh%20${total.toFixed(
       2
-    )}%20from%20Your%20Shop.%20We%20will%20contact%20you%20soon.`;
-
+    )}%20from%20Your%20Shop.`;
 
     res.status(200).json({
       message: "Order notification sent successfully.",
       whatsappRedirect: whatsappUrl
     });
-
   } catch (error) {
-    console.error("Error sending order email:", error.message);
+    console.error("Order email error:", error);
     res.status(500).json({ message: "Failed to send order email." });
   }
 });
@@ -135,14 +153,11 @@ app.post("/api/order", async (req, res) => {
 // MongoDB + Start Server
 // ------------------------------------
 mongoose
-  .connect(MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-  })
+  .connect(MONGO_URI)
   .then(() => {
     console.log("✅ MongoDB connected");
 
-    const port = PORT || 4000;
+    const port = PORT || 10000;
     app.listen(port, () =>
       console.log(`🚀 Server running on port ${port}`)
     );
