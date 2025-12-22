@@ -30,13 +30,16 @@ router.post("/stk-push", auth, async (req, res) => {
       status: "pending"
     });
 
+  console.log("🔁 PAYHERO CALLBACK URL:", process.env.PAYHERO_CALLBACK_URL);
+
+
     const response = await axios.post(
       `${process.env.PAYHERO_BASE_URL}/v1/payments/stk-push`,
       {
         amount: PAYMENT_AMOUNT_KES,
         phone_number: phone,
         channel_id: process.env.PAYHERO_CHANNEL_ID,
-        provider: "mpesa",
+        provider: "m-pesa",
         callback_url: process.env.PAYHERO_CALLBACK_URL,
         external_reference: payment._id.toString()
       },
