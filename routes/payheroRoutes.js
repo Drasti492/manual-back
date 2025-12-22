@@ -39,7 +39,7 @@ router.post("/stk-push", auth, async (req, res) => {
         amount: PAYMENT_AMOUNT_KES,
         phone_number: phone,
         channel_id: process.env.PAYHERO_CHANNEL_ID,
-        provider: "m-pesa",
+        provider: "mpesa",
         callback_url: process.env.PAYHERO_CALLBACK_URL,
         external_reference: payment._id.toString()
       },
