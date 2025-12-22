@@ -28,23 +28,24 @@ router.post("/stk-push", auth, async (req, res) => {
       status: "pending"
     });
 
-    await axios.post(
-      `${process.env.PAYHERO_BASE_URL}/stkpush`,
-      {
-        amount: PAYMENT_AMOUNT_KES,
-        phone_number: phone,
-        channel_id: process.env.PAYHERO_CHANNEL_ID,
-        provider: "m-pesa",
-        callback_url: process.env.PAYHERO_CALLBACK_URL,
-        external_reference: payment._id.toString()
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.PAYHERO_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
+   await axios.post(
+  "https://backend.payhero.co.ke/api/v2/payments",
+  {
+    amount: PAYMENT_AMOUNT_KES,
+    phone_number: phone,
+    channel_id: Number(process.env.PAYHERO_CHANNEL_ID),
+    provider: "m-pesa",
+    callback_url: process.env.PAYHERO_CALLBACK_URL,
+    external_reference: payment._id.toString()
+  },
+  {
+    headers: {
+      Authorization: `Basic ${process.env.PAYHERO_BASIC_AUTH}`,
+      "Content-Type": "application/json"
+    }
+  }
+);
+
 
     res.json({
       success: true,

@@ -15,7 +15,12 @@ const paymentSchema = new mongoose.Schema(
 
     phone: { type: String, required: true },
 
-    reference: String,
+    reference: {
+      type: String,
+      required: true,
+      unique: true,
+      default: () => new mongoose.Types.ObjectId().toString() // generate unique default
+    },
 
     status: {
       type: String,
@@ -30,5 +35,6 @@ const paymentSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
 
 module.exports = mongoose.model("Payment", paymentSchema);
