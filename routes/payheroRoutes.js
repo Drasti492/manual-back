@@ -12,7 +12,7 @@ const CONNECTS_GRANTED = 8;
  */
 router.post("/stk-push", auth, async (req, res) => {
   try {
-    const { phone, amountKES = 1540 } = req.body;  // Default fixed if not sent
+    const { phone, amountKES = 1 } = req.body;  // Default fixed if not sent
     if (!phone) return res.status(400).json({ message: "Phone number is required" });
 
     const user = await User.findById(req.user._id);
