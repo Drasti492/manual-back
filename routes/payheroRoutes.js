@@ -34,7 +34,7 @@ router.post("/stk-push", auth, async (req, res) => {
 
 
     const response = await axios.post(
-      `${process.env.PAYHERO_BASE_URL}/v1/payments/stk-push`,
+      `${process.env.PAYHERO_BASE_URL}/api/v1/payments/stk`,
       {
         amount: PAYMENT_AMOUNT_KES,
         phone_number: phone,
