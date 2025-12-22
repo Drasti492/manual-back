@@ -59,6 +59,8 @@ const notificationsRoutes = require("./routes/notificationsRoutes");
 const verifyRoutes = require("./routes/verifyRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const withdrawalRoutes = require("./routes/withdrawalRoutes");
+const adminWithdrawalRoutes = require("./routes/adminWithdrawalRoutes");
+const payheroRoutes = require("./routes/payheroRoutes");
 
 // ------------------------------------
 // Attach Routes
@@ -70,7 +72,8 @@ app.use("/api/notifications", notificationsRoutes);
 app.use("/api/verify", verifyRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/withdrawals", withdrawalRoutes);
-
+app.use("/api/admin/withdrawals", adminWithdrawalRoutes);
+app.use("/api/payhero", payheroRoutes);
 // ------------------------------------
 // Brevo Email (Order Notification)
 // ------------------------------------
