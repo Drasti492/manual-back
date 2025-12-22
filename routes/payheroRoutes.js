@@ -5,7 +5,6 @@ const User = require("../models/user");
 const Payment = require("../models/Payment");
 const router = express.Router();
 
-const PAYMENT_AMOUNT_KES = 1540;
 const CONNECTS_GRANTED = 8;
 
 /**
@@ -13,35 +12,29 @@ const CONNECTS_GRANTED = 8;
  */
 router.post("/stk-push", auth, async (req, res) => {
   try {
-    const { phone } = req.body;
-    if (!phone) {
-      return res.status(400).json({ message: "Phone number is required" });
-    }
+    const { phone, amountKES = 1540 } = req.body;  // Default fixed if not sent
+    if (!phone) return res.status(400).json({ message: "Phone number is required" });
 
     const user = await User.findById(req.user._id);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    if (!user) return res.status(404).json({ message: "User not found" });
 
     const payment = await Payment.create({
       user: user._id,
       phone,
-      amountKES: PAYMENT_AMOUNT_KES,
+      amountKES: Number(amountKES),
       status: "pending"
     });
 
-  console.log("🔁 PAYHERO CALLBACK URL:", process.env.PAYHERO_CALLBACK_URL);
-
-
     const response = await axios.post(
-      `${process.env.PAYHERO_BASE_URL}/api/v1/payments/stk`,
+      `${process.env.PAYHERO_BASE_URL}/api/v2/payments`,
       {
-        amount: PAYMENT_AMOUNT_KES,
-        phone_number: phone,
+        amount: Number(amountKES),
+        phone_number: phone.replace(/^0/, "254"),  // Convert 07... → 254... for safety
         channel_id: process.env.PAYHERO_CHANNEL_ID,
-        provider: "mpesa",
+        provider: "m-pesa",
         callback_url: process.env.PAYHERO_CALLBACK_URL,
-        external_reference: payment._id.toString()
+        external_reference: payment._id.toString(),
+        customer_name: user.name  // Optional: Add user name
       },
       {
         headers: {
@@ -67,16 +60,30 @@ router.post("/stk-push", auth, async (req, res) => {
 });
 
 /**
- * PAYHERO CALLBACK
+ * PAYHERO CALLBACK (UPDATED FOR DOCS EXAMPLE)
  */
 router.post("/callback", async (req, res) => {
   try {
-    const { external_reference, status } = req.body;
+    console.log("✅ PAYHERO CALLBACK RECEIVED:", JSON.stringify(req.body, null, 2));  // LOG FULL PAYLOAD FOR DEBUG
 
-    const payment = await Payment.findById(external_reference).populate("user");
+    const payload = req.body;
+
+    // Extract external_reference (might be in response.ExternalReference or top-level)
+    const externalRef = payload.response?.ExternalReference || payload.ExternalReference || payload.external_reference;
+    if (!externalRef) {
+      console.error("No external_reference in callback");
+      return res.status(400).end();
+    }
+
+    const payment = await Payment.findById(externalRef).populate("user");
     if (!payment) return res.status(404).end();
 
-    if (status === "success") {
+    // Check success: Based on docs example
+    const isSuccess = payload.status === true && 
+                      payload.response?.Status === "Success" && 
+                      payload.response?.ResultCode === 0;
+
+    if (isSuccess) {
       payment.status = "success";
       await payment.save();
 
@@ -84,11 +91,13 @@ router.post("/callback", async (req, res) => {
       user.verified = true;
       user.isManuallyVerified = true;
       user.connects += CONNECTS_GRANTED;
-
       await user.save();
+
+      console.log(`✅ Payment success for user ${user._id} - Verified & +${CONNECTS_GRANTED} connects`);
     } else {
       payment.status = "failed";
       await payment.save();
+      console.log("❌ Payment failed/cancelled");
     }
 
     res.status(200).end();
