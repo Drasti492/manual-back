@@ -3,8 +3,8 @@ const axios = require("axios");
 const auth = require("../middleware/auth");
 const User = require("../models/user");
 const Payment = require("../models/Payment");
-const router = express.Router();
 
+const router = express.Router();
 const CONNECTS_GRANTED = 8;
 
 /**
@@ -12,8 +12,11 @@ const CONNECTS_GRANTED = 8;
  */
 router.post("/stk-push", auth, async (req, res) => {
   try {
-    const { phone, amountKES = 1 } = req.body;  // Default fixed if not sent
-    if (!phone) return res.status(400).json({ message: "Phone number is required" });
+    const { phone, amountKES = 1540 } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({ message: "Phone number is required" });
+    }
 
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -25,16 +28,18 @@ router.post("/stk-push", auth, async (req, res) => {
       status: "pending"
     });
 
+    console.log(`🚀 Initiating STK Push | Ref: ${payment.reference} | Phone: ${phone}`);
+
     const response = await axios.post(
       `${process.env.PAYHERO_BASE_URL}/api/v2/payments`,
       {
         amount: Number(amountKES),
-        phone_number: phone.replace(/^0/, "254"),  // Convert 07... → 254... for safety
-        channel_id: process.env.PAYHERO_CHANNEL_ID,
+        phone_number: phone,
+        channel_id: Number(process.env.PAYHERO_CHANNEL_ID),
         provider: "m-pesa",
+        external_reference: payment.reference,
         callback_url: process.env.PAYHERO_CALLBACK_URL,
-        external_reference: payment._id.toString(),
-        customer_name: user.name  // Optional: Add user name
+        customer_name: user.name || "RemoteProJobs User"
       },
       {
         headers: {
@@ -44,66 +49,85 @@ router.post("/stk-push", auth, async (req, res) => {
       }
     );
 
+    console.log("✅ PayHero response:", response.data);
+
     res.json({
       success: true,
-      message: "STK Push sent successfully",
-      payhero: response.data
+      paymentId: payment._id,
+      reference: payment.reference  // ← Return reference
     });
 
   } catch (err) {
     console.error("❌ STK PUSH ERROR:", err.response?.data || err.message);
-    res.status(500).json({
-      message: "Failed to initiate STK Push",
-      error: err.response?.data || err.message
-    });
+    res.status(500).json({ message: "Failed to initiate payment." });
   }
 });
 
 /**
- * PAYHERO CALLBACK (UPDATED FOR DOCS EXAMPLE)
+ * PAYHERO CALLBACK
  */
 router.post("/callback", async (req, res) => {
   try {
-    console.log("✅ PAYHERO CALLBACK RECEIVED:", JSON.stringify(req.body, null, 2));  // LOG FULL PAYLOAD FOR DEBUG
+    console.log("✅ PAYHERO CALLBACK RECEIVED:", JSON.stringify(req.body, null, 2));
 
-    const payload = req.body;
+    const externalRef = req.body?.response?.ExternalReference;
 
-    // Extract external_reference (might be in response.ExternalReference or top-level)
-    const externalRef = payload.response?.ExternalReference || payload.ExternalReference || payload.external_reference;
     if (!externalRef) {
-      console.error("No external_reference in callback");
-      return res.status(400).end();
+      console.error("❌ No ExternalReference");
+      return res.sendStatus(400);
     }
 
-    const payment = await Payment.findById(externalRef).populate("user");
-    if (!payment) return res.status(404).end();
+    const payment = await Payment.findOne({ reference: externalRef }).populate("user");
 
-    // Check success: Based on docs example
-    const isSuccess = payload.status === true && 
-                      payload.response?.Status === "Success" && 
-                      payload.response?.ResultCode === 0;
+    if (!payment) {
+      console.error("❌ Payment not found for ref:", externalRef);
+      return res.sendStatus(404);
+    }
 
-    if (isSuccess) {
+    const resultCode = req.body.response?.ResultCode;
+
+    if (resultCode === 0) {
       payment.status = "success";
       await payment.save();
 
       const user = payment.user;
-      user.verified = true;
-      user.isManuallyVerified = true;
-      user.connects += CONNECTS_GRANTED;
-      await user.save();
+      if (user) {
+        user.verified = true;
+        user.isManuallyVerified = true;
+        user.connects += CONNECTS_GRANTED;
+        await user.save();
+      }
 
-      console.log(`✅ Payment success for user ${user._id} - Verified & +${CONNECTS_GRANTED} connects`);
+      console.log(`✅ SUCCESS: ${payment.reference}`);
     } else {
       payment.status = "failed";
       await payment.save();
-      console.log("❌ Payment failed/cancelled");
+      console.log(`❌ FAILED: ${payment.reference} | Code: ${resultCode}`);
     }
 
-    res.status(200).end();
+    res.sendStatus(200);
+
   } catch (err) {
     console.error("❌ CALLBACK ERROR:", err);
-    res.status(500).end();
+    res.sendStatus(500);
+  }
+});
+
+/**
+ * POLLING BY REFERENCE
+ */
+router.get("/status/:reference", auth, async (req, res) => {
+  try {
+    const payment = await Payment.findOne({ reference: req.params.reference });
+
+    if (!payment || payment.user.toString() !== req.user._id.toString()) {
+      return res.json({ status: "not_found" });
+    }
+
+    res.json({ status: payment.status });
+  } catch (err) {
+    console.error("Status error:", err);
+    res.json({ status: "error" });
   }
 });
 

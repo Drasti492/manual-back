@@ -13,13 +13,16 @@ const paymentSchema = new mongoose.Schema(
       required: true
     },
 
-    phone: { type: String, required: true },
+    phone: {
+      type: String,
+      required: true
+    },
 
     reference: {
       type: String,
       required: true,
       unique: true,
-      default: () => new mongoose.Types.ObjectId().toString() // generate unique default
+      default: () => `PAY-${Date.now()}-${Math.floor(Math.random() * 10000)}`
     },
 
     status: {
@@ -35,6 +38,5 @@ const paymentSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
 
 module.exports = mongoose.model("Payment", paymentSchema);
