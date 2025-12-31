@@ -53,6 +53,13 @@ const userSchema = new mongoose.Schema(
       default: "user"
     },
 
+    accountStatus: {
+  type: String,
+  enum: ["regular", "premium"],
+  default: "regular"
+},
+
+
     // ===============================
     // EMAIL / RESET SYSTEM
     // ===============================

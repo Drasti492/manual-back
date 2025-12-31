@@ -1,8 +1,6 @@
 // controllers/walletController.js
 const User = require("../models/user");
 
-const MIN_WITHDRAWAL = 12;
-
 // ===============================
 // GET BALANCE
 // ===============================
@@ -73,7 +71,7 @@ exports.addMoney = async (req, res) => {
 };
 
 // ===============================
-// WITHDRAW MONEY (LOGIC REFINED)
+// WITHDRAW MONEY (ACCOUNT STATUS AWARE)
 // ===============================
 exports.withdrawMoney = async (req, res) => {
   try {
@@ -96,7 +94,7 @@ exports.withdrawMoney = async (req, res) => {
       });
     }
 
-    // ❌ No money at all
+    // ❌ No money
     if (user.walletBalance <= 0) {
       return res.status(400).json({
         success: false,
@@ -104,11 +102,15 @@ exports.withdrawMoney = async (req, res) => {
       });
     }
 
-    // ❌ Has money but less than minimum
-    if (user.walletBalance < MIN_WITHDRAWAL) {
+    // ✅ MIN WITHDRAWAL BASED ON ACCOUNT STATUS
+    const minWithdrawal =
+      user.accountStatus === "premium" ? 50 : 12;
+
+    // ❌ Below minimum
+    if (user.walletBalance < minWithdrawal) {
       return res.status(400).json({
         success: false,
-        message: `Minimum withdrawal is $${MIN_WITHDRAWAL}`
+        message: `Minimum withdrawal is $${minWithdrawal}`
       });
     }
 
