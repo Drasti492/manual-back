@@ -77,7 +77,7 @@ const userSchema = new mongoose.Schema(
       default: 0
       // ✅ ADMIN CAN CREDIT
       // ✅ TASKS CAN CREDIT
-      // ❌ WITHDRAWAL DOES NOT AUTO-DEDUCT (PENDING FLOW)
+      // WITHDRAWAL DOES NOT AUTO-DEDUCT (PENDING FLOW)
     },
 
     connects: {
