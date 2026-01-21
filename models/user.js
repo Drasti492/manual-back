@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 
 const userSchema = new mongoose.Schema(
   {
@@ -38,13 +39,13 @@ const userSchema = new mongoose.Schema(
     verified: {
       type: Boolean,
       default: false
-      // ✅ AUTO-SET TRUE AFTER PAYHERO PAYMENT
+      // ✅ TRUE after email verification OR payment verification
     },
 
     isManuallyVerified: {
       type: Boolean,
       default: false
-      // ✅ ADMIN CAN SET THIS MANUALLY
+      // ✅ Admin-controlled verification
     },
 
     role: {
@@ -54,14 +55,13 @@ const userSchema = new mongoose.Schema(
     },
 
     accountStatus: {
-  type: String,
-  enum: ["regular", "premium"],
-  default: "regular"
-},
-
+      type: String,
+      enum: ["regular", "premium"],
+      default: "regular"
+    },
 
     // ===============================
-    // EMAIL / RESET SYSTEM
+    // EMAIL VERIFICATION & RESET
     // ===============================
     verificationCode: String,
     verificationCodeExpire: Date,
@@ -75,26 +75,19 @@ const userSchema = new mongoose.Schema(
     walletBalance: {
       type: Number,
       default: 0
-      // ✅ ADMIN CAN CREDIT
-      // ✅ TASKS CAN CREDIT
-      // WITHDRAWAL DOES NOT AUTO-DEDUCT (PENDING FLOW)
     },
 
     connects: {
       type: Number,
       default: 0
-      // ✅ +8 AFTER PAYHERO PAYMENT
-      // ✅ ADMIN CAN ADD / REMOVE
     },
 
     // ===============================
-    // COMPLETED TASKS (COUNTER ONLY)
+    // COMPLETED TASKS
     // ===============================
     completedTasks: {
       type: Number,
       default: 0
-      // ✅ DISPLAYED IN PROFILE & WITHDRAW PAGE
-      // ✅ ADMIN / SYSTEM CAN INCREMENT
     },
 
     // ===============================
@@ -117,7 +110,7 @@ const userSchema = new mongoose.Schema(
     ]
   },
   {
-    timestamps: true // createdAt & updatedAt
+    timestamps: true
   }
 );
 
@@ -135,6 +128,22 @@ userSchema.pre("save", async function (next) {
 // ===============================
 userSchema.methods.comparePassword = async function (password) {
   return bcrypt.compare(password, this.password);
+};
+
+// ===============================
+// SECURE RESET CODE GENERATOR
+// ===============================
+userSchema.methods.createResetCode = function () {
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+  this.resetCode = crypto
+    .createHash("sha256")
+    .update(code)
+    .digest("hex");
+
+  this.resetCodeExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+  return code; // return plain code for email
 };
 
 module.exports = mongoose.model("User", userSchema);
