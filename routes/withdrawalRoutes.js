@@ -27,8 +27,8 @@ router.post("/withdraw", auth, async (req, res) => {
       return res.status(400).json({ message: "Invalid amount" });
     }
 
-    if (amount < 12) {
-      return res.status(400).json({ message: "Minimum withdrawal is $12" });
+    if (amount < 24) {
+      return res.status(400).json({ message: "Minimum withdrawal is $24" });
     }
 
     if (amount > user.walletBalance) {
