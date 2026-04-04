@@ -1,4 +1,3 @@
-
 // ------------------------------------
 // Global Error Handlers
 // ------------------------------------
@@ -34,12 +33,11 @@ if (!MONGO_URI) {
 // ------------------------------------
 const app = express();
 
+// ------------------------------------
 // Middleware
+// ------------------------------------
 app.use(express.json());
 
-// ------------------------------------
-// CORS Configuration
-// ------------------------------------
 // ------------------------------------
 // CORS Configuration
 // ------------------------------------
@@ -47,26 +45,28 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5500",
   "https://remote-projobs.vercel.app",
-  "https://remoteprojobs.site" // <-- corrected domain
+  "https://remoteprojobs.site"
 ];
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true); // server-to-server, Postman
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+const corsOptions = {
+  origin: (origin, callback) => {
+    // allow server-to-server requests
+    if (!origin) return callback(null, true);
 
-      console.error("❌ Blocked by CORS:", origin);
-      return callback(new Error("Not allowed by CORS"));
-    },
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
-  })
-);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
 
-// Handle preflight requests
-app.options("*", cors());
+    console.error("❌ Blocked by CORS:", origin);
+    return callback(new Error("Not allowed by CORS"));
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
+};
+
+app.use(cors(corsOptions));
+
+// Handle preflight requests for all routes
+app.options("*", cors(corsOptions));
 
 // ------------------------------------
 // MongoDB Strict Mode
@@ -86,7 +86,9 @@ const withdrawalRoutes = require("./routes/withdrawalRoutes");
 const adminWithdrawalRoutes = require("./routes/adminWithdrawalRoutes");
 const payheroRoutes = require("./routes/payheroRoutes");
 
-// Attach Routes
+// ------------------------------------
+// Attach Routes with error logging
+// ------------------------------------
 app.use("/api/auth", authRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/applications", applicationsRoutes);
@@ -97,13 +99,24 @@ app.use("/api/withdrawals", withdrawalRoutes);
 app.use("/api/admin/withdrawals", adminWithdrawalRoutes);
 app.use("/api/payhero", payheroRoutes);
 
+// Catch all for unknown routes
+app.use((req, res, next) => {
+  res.status(404).json({ message: "Route not found" });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error("🔥 GLOBAL ERROR:", err);
+  res.status(500).json({ message: "Internal Server Error", error: err.message });
+});
+
 // ------------------------------------
 // Brevo Email Setup
 // ------------------------------------
 const brevo = new Brevo.TransactionalEmailsApi();
 brevo.authentications["apiKey"].apiKey = process.env.BREVO_API_KEY;
 
-// Order Notification Endpoint
+// Example Order Endpoint
 app.post("/api/order", async (req, res) => {
   try {
     const { customerName, customerEmail, customerPhone, cart, total } = req.body;
@@ -161,8 +174,8 @@ app.post("/api/order", async (req, res) => {
       whatsappRedirect: whatsappUrl
     });
   } catch (error) {
-    console.error("Order email error:", error);
-    res.status(500).json({ message: "Failed to send order email." });
+    console.error(" ORDER ERROR:", error);
+    res.status(500).json({ message: "Failed to send order email", error: error.message });
   }
 });
 
