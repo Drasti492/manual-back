@@ -169,13 +169,13 @@ mongoose
     console.log("✅ MongoDB connected");
 
     const port = PORT || 10000;
-    app.listen(port, () =>
-      console.log(`🚀 Server running on port ${port}`)
-    );
+    app.listen(PORT, () =>
+  console.log(`🚀 Server running on port ${PORT}`)
+);
   })
   .catch((err) => {
-    console.error("❌ MongoDB connection error:", err.message);
-    process.exit(1);
-  });
+  console.error("❌ MongoDB FULL ERROR:", err);
+  process.exit(1);
+});
 
 module.exports = app;
