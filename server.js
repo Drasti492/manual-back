@@ -1,9 +1,17 @@
 require("dotenv").config();
+
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const Brevo = require("@getbrevo/brevo");
-const { PORT, MONGO_URI } = require("./config");
+
+const PORT = process.env.PORT || 10000;
+const MONGO_URI = process.env.MONGO_URI;
+
+if (!MONGO_URI) {
+  console.error("❌ MONGO_URI is missing!");
+  process.exit(1);
+}
 
 const app = express();
 
