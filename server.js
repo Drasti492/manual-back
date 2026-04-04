@@ -1,4 +1,3 @@
-// server.js — Cleaned & Multi-DB Deployment-Friendly
 
 // ------------------------------------
 // Global Error Handlers
@@ -22,24 +21,25 @@ const cors = require("cors");
 const Brevo = require("@getbrevo/brevo");
 
 const PORT = process.env.PORT || 10000;
-const MONGO_URI = process.env.MONGO_URI;           // Primary DB
-const NEW_MONGO_URI = process.env.NEW_MONGO_URI;   // Secondary DB
+const MONGO_URI = process.env.MONGO_URI;
 
+// Exit if Mongo URI is missing
 if (!MONGO_URI) {
-  console.error("❌ MONGO_URI (primary DB) is missing!");
+  console.error("❌ MONGO_URI is missing!");
   process.exit(1);
-}
-
-if (!NEW_MONGO_URI) {
-  console.warn("⚠️ NEW_MONGO_URI not set. Secondary DB will not be connected.");
 }
 
 // ------------------------------------
 // Express App Setup
 // ------------------------------------
 const app = express();
+
+// Middleware
 app.use(express.json());
 
+// ------------------------------------
+// CORS Configuration
+// ------------------------------------
 // ------------------------------------
 // CORS Configuration
 // ------------------------------------
@@ -47,7 +47,7 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5500",
   "https://remote-projobs.vercel.app",
-  "https://remoteprojobs.site"
+  "https://remoteprojobs.site" // <-- corrected domain
 ];
 
 app.use(
@@ -55,6 +55,7 @@ app.use(
     origin: (origin, callback) => {
       if (!origin) return callback(null, true); // server-to-server, Postman
       if (allowedOrigins.includes(origin)) return callback(null, true);
+
       console.error("❌ Blocked by CORS:", origin);
       return callback(new Error("Not allowed by CORS"));
     },
@@ -64,6 +65,7 @@ app.use(
   })
 );
 
+// Handle preflight requests
 app.options("*", cors());
 
 // ------------------------------------
@@ -72,36 +74,7 @@ app.options("*", cors());
 mongoose.set("strictQuery", true);
 
 // ------------------------------------
-// MongoDB Connections
-// ------------------------------------
-// Primary DB (existing)
-mongoose
-  .connect(MONGO_URI)
-  .then(() => console.log("✅ Primary MongoDB connected"))
-  .catch((err) => {
-    console.error("❌ Primary MongoDB connection error:", err);
-    process.exit(1);
-  });
-
-// Secondary DB (optional)
-let secondaryConnection;
-if (NEW_MONGO_URI) {
-  secondaryConnection = mongoose.createConnection(NEW_MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-  });
-
-  secondaryConnection.once("open", () => {
-    console.log("✅ Secondary MongoDB connected");
-  });
-
-  secondaryConnection.on("error", (err) => {
-    console.error("❌ Secondary MongoDB connection error:", err);
-  });
-}
-
-// ------------------------------------
-// Import & Attach Routes
+// Import Routes
 // ------------------------------------
 const authRoutes = require("./routes/authRoutes");
 const orderRoutes = require("./routes/orderRoutes");
@@ -113,6 +86,7 @@ const withdrawalRoutes = require("./routes/withdrawalRoutes");
 const adminWithdrawalRoutes = require("./routes/adminWithdrawalRoutes");
 const payheroRoutes = require("./routes/payheroRoutes");
 
+// Attach Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/applications", applicationsRoutes);
@@ -129,14 +103,14 @@ app.use("/api/payhero", payheroRoutes);
 const brevo = new Brevo.TransactionalEmailsApi();
 brevo.authentications["apiKey"].apiKey = process.env.BREVO_API_KEY;
 
-// ------------------------------------
 // Order Notification Endpoint
-// ------------------------------------
 app.post("/api/order", async (req, res) => {
   try {
     const { customerName, customerEmail, customerPhone, cart, total } = req.body;
-    if (!cart || cart.length === 0)
+
+    if (!cart || cart.length === 0) {
       return res.status(400).json({ message: "Cart is empty." });
+    }
 
     const orderItemsHtml = cart
       .map(
@@ -153,12 +127,15 @@ app.post("/api/order", async (req, res) => {
     adminEmail.sender = { email: "no-reply@yourdomain.com", name: "Your Shop" };
     adminEmail.to = [{ email: "youremail@example.com", name: "Store Admin" }];
     adminEmail.subject = `🛒 New Order from ${customerName}`;
-    adminEmail.htmlContent = `<h2>New Order Received</h2>
+    adminEmail.htmlContent = `
+      <h2>New Order Received</h2>
       <p><strong>Name:</strong> ${customerName}</p>
       <p><strong>Email:</strong> ${customerEmail}</p>
       <p><strong>Phone:</strong> ${customerPhone}</p>
-      <h3>Order Details:</h3><ul>${orderItemsHtml}</ul>
-      <h3>Total: Ksh ${total.toFixed(2)}</h3>`;
+      <h3>Order Details:</h3>
+      <ul>${orderItemsHtml}</ul>
+      <h3>Total: Ksh ${total.toFixed(2)}</h3>
+    `;
     await brevo.sendTransacEmail(adminEmail);
 
     // Customer email
@@ -166,18 +143,18 @@ app.post("/api/order", async (req, res) => {
     clientEmail.sender = { email: "no-reply@yourdomain.com", name: "Your Shop" };
     clientEmail.to = [{ email: customerEmail, name: customerName }];
     clientEmail.subject = "✅ Order Confirmation - Your Purchase Summary";
-    clientEmail.htmlContent = `<h2>Hi ${customerName},</h2>
+    clientEmail.htmlContent = `
+      <h2>Hi ${customerName},</h2>
       <p>Thank you for your order! Here is your summary:</p>
       <ul>${orderItemsHtml}</ul>
       <p><strong>Total:</strong> Ksh ${total.toFixed(2)}</p>
-      <p>We will contact you soon for delivery.</p>`;
+      <p>We will contact you soon for delivery.</p>
+    `;
     await brevo.sendTransacEmail(clientEmail);
 
     const whatsappUrl = `https://wa.me/254?text=Hi%20${encodeURIComponent(
       customerName
-    )},%20thank%20you%20for%20your%20order%20of%20Ksh%20${total.toFixed(
-      2
-    )}%20from%20Your%20Shop.`;
+    )},%20thank%20you%20for%20your%20order%20of%20Ksh%20${total.toFixed(2)}%20from%20Your%20Shop.`;
 
     res.status(200).json({
       message: "Order notification sent successfully.",
@@ -190,10 +167,20 @@ app.post("/api/order", async (req, res) => {
 });
 
 // ------------------------------------
-// Start Express Server
+// MongoDB Connection + Start Server
 // ------------------------------------
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+mongoose
+  .connect(MONGO_URI)
+  .then(() => {
+    console.log("✅ MongoDB connected");
 
-module.exports = { app, secondaryConnection };
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error("❌ MongoDB FULL ERROR:", err);
+    process.exit(1);
+  });
+
+module.exports = app;
