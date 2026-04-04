@@ -1,3 +1,19 @@
+// server.js — Cleaned & Multi-DB Deployment-Friendly
+
+// ------------------------------------
+// Global Error Handlers
+// ------------------------------------
+process.on("uncaughtException", (err) => {
+  console.error("🔥 UNCAUGHT EXCEPTION:", err);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.error("🔥 UNHANDLED REJECTION:", err);
+});
+
+// ------------------------------------
+// Environment Variables
+// ------------------------------------
 require("dotenv").config();
 
 const express = require("express");
@@ -6,22 +22,26 @@ const cors = require("cors");
 const Brevo = require("@getbrevo/brevo");
 
 const PORT = process.env.PORT || 10000;
-const MONGO_URI = process.env.MONGO_URI;
+const MONGO_URI = process.env.MONGO_URI;           // Primary DB
+const NEW_MONGO_URI = process.env.NEW_MONGO_URI;   // Secondary DB
 
 if (!MONGO_URI) {
-  console.error("❌ MONGO_URI is missing!");
+  console.error("❌ MONGO_URI (primary DB) is missing!");
   process.exit(1);
 }
 
-const app = express();
+if (!NEW_MONGO_URI) {
+  console.warn("⚠️ NEW_MONGO_URI not set. Secondary DB will not be connected.");
+}
 
 // ------------------------------------
-// Middleware
+// Express App Setup
 // ------------------------------------
+const app = express();
 app.use(express.json());
 
 // ------------------------------------
-// CORS CONFIG — FIXED & PRODUCTION SAFE
+// CORS Configuration
 // ------------------------------------
 const allowedOrigins = [
   "http://localhost:5173",
@@ -32,14 +52,9 @@ const allowedOrigins = [
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // Allow server-to-server, Postman, mobile apps
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true); // server-to-server, Postman
+      if (allowedOrigins.includes(origin)) return callback(null, true);
       console.error("❌ Blocked by CORS:", origin);
       return callback(new Error("Not allowed by CORS"));
     },
@@ -49,16 +64,44 @@ app.use(
   })
 );
 
-// ✅ VERY IMPORTANT — handle preflight
 app.options("*", cors());
 
 // ------------------------------------
-// MongoDB strict mode
+// MongoDB Strict Mode
 // ------------------------------------
 mongoose.set("strictQuery", true);
 
 // ------------------------------------
-// Import Routes
+// MongoDB Connections
+// ------------------------------------
+// Primary DB (existing)
+mongoose
+  .connect(MONGO_URI)
+  .then(() => console.log("✅ Primary MongoDB connected"))
+  .catch((err) => {
+    console.error("❌ Primary MongoDB connection error:", err);
+    process.exit(1);
+  });
+
+// Secondary DB (optional)
+let secondaryConnection;
+if (NEW_MONGO_URI) {
+  secondaryConnection = mongoose.createConnection(NEW_MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+  });
+
+  secondaryConnection.once("open", () => {
+    console.log("✅ Secondary MongoDB connected");
+  });
+
+  secondaryConnection.on("error", (err) => {
+    console.error("❌ Secondary MongoDB connection error:", err);
+  });
+}
+
+// ------------------------------------
+// Import & Attach Routes
 // ------------------------------------
 const authRoutes = require("./routes/authRoutes");
 const orderRoutes = require("./routes/orderRoutes");
@@ -70,9 +113,6 @@ const withdrawalRoutes = require("./routes/withdrawalRoutes");
 const adminWithdrawalRoutes = require("./routes/adminWithdrawalRoutes");
 const payheroRoutes = require("./routes/payheroRoutes");
 
-// ------------------------------------
-// Attach Routes
-// ------------------------------------
 app.use("/api/auth", authRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/applications", applicationsRoutes);
@@ -82,33 +122,29 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/withdrawals", withdrawalRoutes);
 app.use("/api/admin/withdrawals", adminWithdrawalRoutes);
 app.use("/api/payhero", payheroRoutes);
+
 // ------------------------------------
-// Brevo Email (Order Notification)
+// Brevo Email Setup
 // ------------------------------------
 const brevo = new Brevo.TransactionalEmailsApi();
 brevo.authentications["apiKey"].apiKey = process.env.BREVO_API_KEY;
 
+// ------------------------------------
+// Order Notification Endpoint
+// ------------------------------------
 app.post("/api/order", async (req, res) => {
   try {
-    const {
-      customerName,
-      customerEmail,
-      customerPhone,
-      cart,
-      total
-    } = req.body;
-
-    if (!cart || cart.length === 0) {
+    const { customerName, customerEmail, customerPhone, cart, total } = req.body;
+    if (!cart || cart.length === 0)
       return res.status(400).json({ message: "Cart is empty." });
-    }
 
     const orderItemsHtml = cart
       .map(
         (item) => `
-          <li>
-            <strong>${item.name}</strong> — Ksh ${item.price} × ${item.quantity}<br>
-            <small>${item.description || ""}</small>
-          </li>`
+        <li>
+          <strong>${item.name}</strong> — Ksh ${item.price} × ${item.quantity}<br>
+          <small>${item.description || ""}</small>
+        </li>`
       )
       .join("");
 
@@ -117,16 +153,12 @@ app.post("/api/order", async (req, res) => {
     adminEmail.sender = { email: "no-reply@yourdomain.com", name: "Your Shop" };
     adminEmail.to = [{ email: "youremail@example.com", name: "Store Admin" }];
     adminEmail.subject = `🛒 New Order from ${customerName}`;
-    adminEmail.htmlContent = `
-      <h2>New Order Received</h2>
+    adminEmail.htmlContent = `<h2>New Order Received</h2>
       <p><strong>Name:</strong> ${customerName}</p>
       <p><strong>Email:</strong> ${customerEmail}</p>
       <p><strong>Phone:</strong> ${customerPhone}</p>
-      <h3>Order Details:</h3>
-      <ul>${orderItemsHtml}</ul>
-      <h3>Total: Ksh ${total.toFixed(2)}</h3>
-    `;
-
+      <h3>Order Details:</h3><ul>${orderItemsHtml}</ul>
+      <h3>Total: Ksh ${total.toFixed(2)}</h3>`;
     await brevo.sendTransacEmail(adminEmail);
 
     // Customer email
@@ -134,14 +166,11 @@ app.post("/api/order", async (req, res) => {
     clientEmail.sender = { email: "no-reply@yourdomain.com", name: "Your Shop" };
     clientEmail.to = [{ email: customerEmail, name: customerName }];
     clientEmail.subject = "✅ Order Confirmation - Your Purchase Summary";
-    clientEmail.htmlContent = `
-      <h2>Hi ${customerName},</h2>
+    clientEmail.htmlContent = `<h2>Hi ${customerName},</h2>
       <p>Thank you for your order! Here is your summary:</p>
       <ul>${orderItemsHtml}</ul>
       <p><strong>Total:</strong> Ksh ${total.toFixed(2)}</p>
-      <p>We will contact you soon for delivery.</p>
-    `;
-
+      <p>We will contact you soon for delivery.</p>`;
     await brevo.sendTransacEmail(clientEmail);
 
     const whatsappUrl = `https://wa.me/254?text=Hi%20${encodeURIComponent(
@@ -161,21 +190,10 @@ app.post("/api/order", async (req, res) => {
 });
 
 // ------------------------------------
-// MongoDB + Start Server
+// Start Express Server
 // ------------------------------------
-mongoose
-  .connect(MONGO_URI)
-  .then(() => {
-    console.log("✅ MongoDB connected");
-
-    const port = PORT || 10000;
-    app.listen(PORT, () =>
-  console.log(`🚀 Server running on port ${PORT}`)
-);
-  })
-  .catch((err) => {
-  console.error("❌ MongoDB FULL ERROR:", err);
-  process.exit(1);
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
 
-module.exports = app;
+module.exports = { app, secondaryConnection };
