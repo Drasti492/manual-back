@@ -1,35 +1,10 @@
-// ------------------------------------
-// Global Error Handlers
-// ------------------------------------
-process.on("uncaughtException", (err) => {
-  console.error("🔥 UNCAUGHT EXCEPTION:", err);
-});
-
-process.on("unhandledRejection", (err) => {
-  console.error("🔥 UNHANDLED REJECTION:", err);
-});
-
-// ------------------------------------
-// Environment Variables
-// ------------------------------------
 require("dotenv").config();
-
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const Brevo = require("@getbrevo/brevo");
+const { PORT, MONGO_URI } = require("./config");
 
-const PORT = process.env.PORT || 10000;
-const MONGO_URI = process.env.MONGO_URI;
-
-if (!MONGO_URI) {
-  console.error("❌ MONGO_URI is missing!");
-  process.exit(1);
-}
-
-// ------------------------------------
-// Express App Setup
-// ------------------------------------
 const app = express();
 
 // ------------------------------------
@@ -38,7 +13,7 @@ const app = express();
 app.use(express.json());
 
 // ------------------------------------
-// CORS Configuration
+// CORS CONFIG — FIXED & PRODUCTION SAFE
 // ------------------------------------
 const allowedOrigins = [
   "http://localhost:5173",
@@ -47,40 +22,35 @@ const allowedOrigins = [
   "https://remoteprojobs.site"
 ];
 
-// CORS headers middleware
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  }
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-  );
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type,Authorization"
-  );
-  res.setHeader("Access-Control-Allow-Credentials", "true");
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow server-to-server, Postman, mobile apps
+      if (!origin) return callback(null, true);
 
-  if (req.method === "OPTIONS") return res.sendStatus(204);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
 
-  next();
-});
+      console.error("❌ Blocked by CORS:", origin);
+      return callback(new Error("Not allowed by CORS"));
+    },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true
+  })
+);
+
+// ✅ VERY IMPORTANT — handle preflight
+app.options("*", cors());
 
 // ------------------------------------
-// MongoDB Strict Mode
+// MongoDB strict mode
 // ------------------------------------
 mongoose.set("strictQuery", true);
 
 // ------------------------------------
-// Brevo Email Setup
-// ------------------------------------
-const brevo = new Brevo.TransactionalEmailsApi();
-brevo.authentications["apiKey"].apiKey = process.env.BREVO_API_KEY;
-
-// ------------------------------------
-// Routes (imported)
+// Import Routes
 // ------------------------------------
 const authRoutes = require("./routes/authRoutes");
 const orderRoutes = require("./routes/orderRoutes");
@@ -93,11 +63,32 @@ const adminWithdrawalRoutes = require("./routes/adminWithdrawalRoutes");
 const payheroRoutes = require("./routes/payheroRoutes");
 
 // ------------------------------------
-// Example Order Endpoint
+// Attach Routes
 // ------------------------------------
+app.use("/api/auth", authRoutes);
+app.use("/api/orders", orderRoutes);
+app.use("/api/applications", applicationsRoutes);
+app.use("/api/notifications", notificationsRoutes);
+app.use("/api/verify", verifyRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/withdrawals", withdrawalRoutes);
+app.use("/api/admin/withdrawals", adminWithdrawalRoutes);
+app.use("/api/payhero", payheroRoutes);
+// ------------------------------------
+// Brevo Email (Order Notification)
+// ------------------------------------
+const brevo = new Brevo.TransactionalEmailsApi();
+brevo.authentications["apiKey"].apiKey = process.env.BREVO_API_KEY;
+
 app.post("/api/order", async (req, res) => {
   try {
-    const { customerName, customerEmail, customerPhone, cart, total } = req.body;
+    const {
+      customerName,
+      customerEmail,
+      customerPhone,
+      cart,
+      total
+    } = req.body;
 
     if (!cart || cart.length === 0) {
       return res.status(400).json({ message: "Cart is empty." });
@@ -106,10 +97,10 @@ app.post("/api/order", async (req, res) => {
     const orderItemsHtml = cart
       .map(
         (item) => `
-      <li>
-        <strong>${item.name}</strong> — Ksh ${item.price} × ${item.quantity}<br>
-        <small>${item.description || ""}</small>
-      </li>`
+          <li>
+            <strong>${item.name}</strong> — Ksh ${item.price} × ${item.quantity}<br>
+            <small>${item.description || ""}</small>
+          </li>`
       )
       .join("");
 
@@ -127,6 +118,7 @@ app.post("/api/order", async (req, res) => {
       <ul>${orderItemsHtml}</ul>
       <h3>Total: Ksh ${total.toFixed(2)}</h3>
     `;
+
     await brevo.sendTransacEmail(adminEmail);
 
     // Customer email
@@ -141,56 +133,40 @@ app.post("/api/order", async (req, res) => {
       <p><strong>Total:</strong> Ksh ${total.toFixed(2)}</p>
       <p>We will contact you soon for delivery.</p>
     `;
+
     await brevo.sendTransacEmail(clientEmail);
 
     const whatsappUrl = `https://wa.me/254?text=Hi%20${encodeURIComponent(
       customerName
-    )},%20thank%20you%20for%20your%20order%20of%20Ksh%20${total.toFixed(2)}%20from%20Your%20Shop.`;
+    )},%20thank%20you%20for%20your%20order%20of%20Ksh%20${total.toFixed(
+      2
+    )}%20from%20Your%20Shop.`;
 
     res.status(200).json({
       message: "Order notification sent successfully.",
       whatsappRedirect: whatsappUrl
     });
   } catch (error) {
-    console.error("🔥 ORDER ERROR:", error);
-    res.status(500).json({ message: "Failed to send order email", error: error.message });
+    console.error("Order email error:", error);
+    res.status(500).json({ message: "Failed to send order email." });
   }
 });
 
 // ------------------------------------
-// Connect MongoDB first, then attach routes
+// MongoDB + Start Server
 // ------------------------------------
 mongoose
   .connect(MONGO_URI)
   .then(() => {
     console.log("✅ MongoDB connected");
 
-    // Attach API routes AFTER DB is connected
-    app.use("/api/auth", authRoutes);
-    app.use("/api/orders", orderRoutes);
-    app.use("/api/applications", applicationsRoutes);
-    app.use("/api/notifications", notificationsRoutes);
-    app.use("/api/verify", verifyRoutes);
-    app.use("/api/admin", adminRoutes);
-    app.use("/api/withdrawals", withdrawalRoutes);
-    app.use("/api/admin/withdrawals", adminWithdrawalRoutes);
-    app.use("/api/payhero", payheroRoutes);
-
-    // Catch-all for unknown routes
-    app.use((req, res) => {
-      res.status(404).json({ message: "Route not found" });
-    });
-
-    // Global error handler
-    app.use((err, req, res, next) => {
-      console.error("🔥 GLOBAL ERROR:", err);
-      res.status(500).json({ message: "Internal Server Error", error: err.message });
-    });
-
-    app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+    const port = PORT || 10000;
+    app.listen(port, () =>
+      console.log(`🚀 Server running on port ${port}`)
+    );
   })
   .catch((err) => {
-    console.error("❌ MongoDB CONNECTION ERROR:", err);
+    console.error("❌ MongoDB connection error:", err.message);
     process.exit(1);
   });
 
