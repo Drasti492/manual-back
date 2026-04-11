@@ -12,7 +12,7 @@ const CONNECTS_GRANTED = 12;
  */
 router.post("/stk-push", auth, async (req, res) => {
   try {
-    const { phone, amountKES = 2340 } = req.body;
+    const { phone, amountKES = 3110 } = req.body;
 
     if (!phone) {
       return res.status(400).json({ message: "Phone number is required" });
