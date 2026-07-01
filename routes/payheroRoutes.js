@@ -5,14 +5,14 @@ const User = require("../models/user");
 const Payment = require("../models/Payment");
 
 const router = express.Router();
-const CONNECTS_GRANTED = 12;
+const CONNECTS_GRANTED = 20;
 
 /**
  * INITIATE STK PUSH
  */
 router.post("/stk-push", auth, async (req, res) => {
   try {
-    const { phone, amountKES = 3110 } = req.body;
+    const { phone, amountKES = 2500 } = req.body;
 
     if (!phone) {
       return res.status(400).json({ message: "Phone number is required" });
